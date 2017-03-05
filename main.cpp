@@ -1,6 +1,6 @@
 //
 //  main.cpp
-//  FindPath
+//  paradoxpath
 //
 //  Created by Sara Lindström on 2017-02-08.
 //  Copyright © 2017 Sara Lindström. All rights reserved.
@@ -8,347 +8,414 @@
 
 #include <iostream>
 #include <vector>
-#include <cmath>
-#include <iomanip>
 #include <algorithm>
+#include <chrono>
+#include <cassert>
 
 using namespace std;
 
-// ----REPRESENTING NODES ON MAP----
 struct Node
 {
     int x;
     int y;
-    double costG;
-    double costF;
-    int parentX;
-    int parentY;
-    bool operator == (const Node node2)
+    int costF;
+    
+    bool operator==(const Node& other)
     {
-        return (x == node2.x && y == node2.y);
+        return (x == other.x && y == other.y);
+    }
+    
+    int index(const int nMapWidth)
+    {
+        return x + y * nMapWidth;
     }
 };
 
-// ----METHODS SPECIFIC FOR NODES----
-
-// Check if a node is vertical to current node
-bool isHorizontalOrVertical(const int x, const int y, const Node& current)
+int calcCostH(Node endNode, int x, int y)
 {
-    if (x == current.x || y == current.y)
-        return true;
-    else
-        return false;
+    return abs(endNode.x - x) + abs(endNode.y - y);
 }
 
-// Returns cost to mode from current node to end node, using manhattan method
-double calcCostH(Node endNode, int x, int y)
+vector<int> getPath(Node endNode, Node startNode, int nMapWidth,
+                    const vector<int>& cameFrom, const vector<bool>& closedList)
 {
-    return (std::abs(endNode.x - x) + std::abs(endNode.y - y)) * 10;
-}
-
-// ----REPRESENTING 2D MAP----
-struct Map
-{
-    int _row;
-    int _col;
-    vector< vector<int> > _mapdata;
+    vector<int> path;
+    int currentIndex = endNode.index(nMapWidth);
+    int startNodeIndex = startNode.index(nMapWidth);
     
-    // Transforming a 1D map into a 2D map
-    Map(const int row, const int col, const unsigned char* pMap)
+    while(true)
     {
-        _row = row;
-        _col = col;
-        vector< vector<int> > pMap2D(_row, vector<int>(_col));
-        
-        //Looping through cols and rows to add values from the position on the 1D map to the 2D map
-        int index = 0;
-        for (int y = 0; y < _row; ++y)
-        {
-            for (int x = 0; x < _col; ++x)
-            {
-                pMap2D[y][x] = pMap[index];
-                ++index;
-            }
-        }
-        _mapdata = pMap2D;
-    }
-    
-    const int getMap(const int x, const int y)
-    {
-        return _mapdata[y][x];
-    }
-    
-    // Check if the node is on the map, that it's not a wall and not diagonal to current node
-    bool isValid(const int x, const int y, const Node& current)
-    {
-        if ((x < 0 || x >= _col) || (y < 0 || y >= _row) || _mapdata[y][x] == 0 || !isHorizontalOrVertical(x, y, current))
-            return false;
-        else
-            return true;
-    }
-    
-    void setMap(const int x, const int y)
-    {
-        _mapdata[y][x] = 33;
-    }
-    
-    void printMap()
-    {
-        for (int y = 0; y < _row; ++y)
-        {
-            for (int x = 0; x < _col; ++x)
-                cout << setw(2) << _mapdata[y][x] << " ";
-            cout << std::endl;
-        }
-    }
-};
-
-// ----METHODS FOR SEARCHING THROUGH LISTS----
-
-// Check if node is in closed list
-bool isInClosedList(const int x, const int y, const vector<Node>& closedList)
-{
-    bool isOnClosedList =  false;
-    for (int i = 0; i < closedList.size(); ++i)
-    {
-        if (closedList[i].x == x && closedList[i].y == y)
-        {
-            isOnClosedList = true;
+        if (currentIndex == startNodeIndex)
             break;
+        else if (closedList[currentIndex])
+        {
+            path.push_back(currentIndex);
+            currentIndex = cameFrom[currentIndex];
         }
-    }
-    return isOnClosedList;
-}
-
-// Get index for node in the closed list
-Node findNodeInClosedList(const vector<Node>& closedList, const int x, const int y)
-{
-    Node invalidNode = {-1, -1, -1, -1, -1, -1};
-    for (Node i : closedList)
-    {
-        if (i.x == x && i.y == y)
-            return i;
-    }
-    return invalidNode;
-}
-
-// ----METHODS FINDING PATH AND RETURNING 1D MAP AND FILLING NODES IN BUFFER LIST----
-
-// Finds path by going from end node to its parent, and from that to its parent and so on, then reverses the path
-vector<Node> createPath(const vector<Node>& closedList, const int endX, const int endY)
-{
-    vector<Node> path;
-    Node current = findNodeInClosedList(closedList, endX, endY);
-    
-    while(!(current.parentX == current.x && current.parentY == current.y))
-    {
-        path.push_back(current);
-        current = findNodeInClosedList(closedList, current.parentX, current.parentY);
     }
     
     reverse(path.begin(), path.end());
+    
     return path;
 }
 
-vector<int> convertTo1D(const vector<Node>& nodeList, const int nMapWidth)
+void fillBuffer(int* pOutBuffer, const vector<int>& path)
 {
-    vector<int> nodeList1D;
-    for(int i = 0; i < nodeList.size(); ++i)
-        nodeList1D.push_back(nodeList[i].x + (nodeList[i].y * nMapWidth));
-    return nodeList1D;
-}
-
-void printPathOnMap(const vector<Node>& path, Map& map)
-{
-    for (Node i : path)
+    for (size_t i = 0; i < path.size(); ++i)
     {
-        map.setMap(i.x, i.y);
+        pOutBuffer[i] = path[i];
     }
-    cout << "*----MAP-----*" << endl;
-    map.printMap();
-    cout << "*------------*" << endl;
-    cout << endl;
 }
 
-void fillBuffer(const vector<Node>& path, int* pOutBuffer, const int nMapWidth)
+int FindPath(const int nStartX, const int nStartY, const int nTargetX, const int nTargetY,
+             const unsigned char* pMap, const int nMapWidth, const int nMapHeight, int* pOutBuffer,
+             const int nOutBufferSize)
 {
-    vector<int> path1D = convertTo1D(path, nMapWidth);
-    cout << "*-BUFFERLIST-*" << endl;
-    for (int i = 0; i < path1D.size(); ++i)
-    {
-        pOutBuffer[i] = path1D[i];
-        cout << pOutBuffer[i] << endl;
-    }
-    cout << "*------------*" << endl;
-    cout << endl;
-}
-
-// ----MAIN ALGORITHM----
-int FindPath(const int nStartX, const int nStartY, const int nTargetX, const int nTargetY, const unsigned char* pMap,
-             const int nMapWidth, const int nMapHeight, int* pOutBuffer, const int nOutBufferSize)
-{
-    // Set costG, create start and end node, create 2D map and open and closed list
-    double childCostG = 10;
-    Node endNode = {nTargetX, nTargetY, childCostG, 0};
-    double costHStart = calcCostH(endNode, nStartX, nStartY);
-    Node startNode = {nStartX, nStartY, 0, costHStart, 0, 0};
-    Map map = Map(nMapHeight, nMapWidth, pMap);
-    vector<Node> openList = {startNode};
-    vector<Node> closedList;
+    Node endNode = { nTargetX, nTargetY, 0 };
+    Node startNode = { nStartX, nStartY, calcCostH(endNode, nStartX, nStartY) };
+    vector<bool> closedList(nMapHeight*nMapWidth);
+    vector<int> cameFrom(nMapHeight*nMapWidth);
+    vector<int> costG(nMapHeight*nMapWidth, numeric_limits<int>::max());
+    costG[startNode.index(nMapWidth)] = 0;
+    vector<Node> openList;
+    openList.reserve(nMapWidth*nMapHeight/2);
+    openList.push_back(startNode);
+    Node current;
     
-    // Set start node to current
-    Node current = openList[0];
-    
-    // Main loop, continue until end node is found or open list is empty
     while (openList.size() != 0)
     {
-        // Create a vector with nodes horizontal and vercial to open list to later check if its empty then there is no valid step
-        vector<Node> horizontalOrVertical;
-        for (Node n : openList) {
-            if(isHorizontalOrVertical(n.x, n.y, current)) {
-                horizontalOrVertical.push_back(n);
-            }
-        }
+        current = openList[openList.size()-1];
+        openList.pop_back();
+        int mapIndexCurrent = current.index(nMapWidth);
         
-        int index = 0;
-        bool onlyDiagonal = false;
+        if (closedList[mapIndexCurrent])
+            continue;
         
-        if (openList.size() == 1)
-        {
-            // If only one node on open list and it's not the current one and it's diagonal, there is no path
-            if(!(current == openList[0]) && !isHorizontalOrVertical(openList[0].x, openList[0].y, current))
-                onlyDiagonal = true;
-        }
-        // If there is no horizontal or vertical node, there is no path
-        else if (horizontalOrVertical.size() == 0)
-        {
-            onlyDiagonal = true;
-        }
-        else
-        {
-            // For horizontal or vertical node, get node with lowest F-cost
-            for(int i = 0; i < openList.size(); ++i)
-            {
-                if (isHorizontalOrVertical(openList[i].x, openList[i].y, current))
-                {
-                    if (openList[i].costF <= openList[index].costF)
-                        index = i;
-                }
-            }
-        }
+        closedList[mapIndexCurrent] = true;
         
-        // If current is the same as end, print path on map and break
         if (current == endNode)
         {
-            vector<Node> path = createPath(closedList, endNode.x, endNode.y);
+            vector<int> path = getPath(endNode, startNode, nMapWidth, cameFrom, closedList);
             
-            // Checks if the nOutBufferSize is big enough and if not, increases it and calls the function again
             if (path.size() > nOutBufferSize)
-            {
-                cout << "nOutBufferSize too small, trying again with nOutBufferSize: " << nOutBufferSize*2 << endl;
-                cout << endl;
-                FindPath(nStartX, nStartY, nTargetX, nTargetY, pMap, nMapWidth, nMapHeight, pOutBuffer, nOutBufferSize*2);
-            }
-            else
-            {
-                printPathOnMap(path, map);
-                fillBuffer(path, pOutBuffer, nMapWidth);
-            }
+                return static_cast<int>(path.size());
             
+            fillBuffer(pOutBuffer, path);
             return static_cast<int>(path.size());
         }
         
-        // If there is only diagonal nodes to walk on, end program with failure
-        if (onlyDiagonal)
-            return -1;
+        int xNeighbor[] = { -1, 0, 1, 0 };
+        int yNeighbor[] = { 0, -1, 0, 1 };
         
-        // Update current node, openList and closedList
-        current = openList[index];
-        openList.erase(openList.begin() + index);
-        closedList.push_back(current);
-        
-        // Loop through all adjacent nodes
-        for(int x = (current.x - 1); (x <= current.x + 1); ++x)
+        for(int i = 0; i < 4; ++i) // Loop through all adjacent nodes
         {
-            for(int y = current.y - 1; y <= current.y + 1; ++y)
+            int x = xNeighbor[i] + current.x;
+            int y = yNeighbor[i] + current.y;
+            int mapIndexNeighbor = y * nMapWidth + x;
+            
+            if ((x < 0 || x >= nMapWidth || y < 0 || y >= nMapHeight) || pMap[mapIndexNeighbor] == 0) // Check if node is inside map or wall
+                continue;
+            
+            if (closedList[mapIndexNeighbor])// Check if node is on closed list
+                continue;
+            
+            int childCostG = costG[mapIndexCurrent] + 1;
+            int childCostF = calcCostH(endNode, x, y) + childCostG;
+            
+            if (childCostG < costG[mapIndexNeighbor])
             {
-                if (isInClosedList(x, y, closedList))
-                    continue;
-                // If it's a wall, outside map or diagonal
-                if (!map.isValid(x, y, current))
-                    continue;
+                costG[mapIndexNeighbor] = childCostG;
+                cameFrom[mapIndexNeighbor] = mapIndexCurrent;
+                Node child = { x, y, childCostF }; // Creates the child node
+                openList.push_back(child);
                 
-                // Creates the child node
-                double costH = calcCostH(endNode, x, y);
-                double costG = childCostG + current.costG;
-                double costF = costG + costH;
-                Node child = {x, y, costG, costF, current.x, current.y};
-                
-                // Checks if its in openList
-                bool isInOpenList = false;
-                for (int i = 0; i < openList.size(); ++i)
+                for (size_t i = openList.size()-1; i > 0; --i) // Keeps the list sorted
                 {
-                    if ((openList[i] == child))
+                    if (openList[i-1].costF < openList[i].costF)
                     {
-                        // If it's in openList, check if costG is smaller, if so update the node on the list
-                        if (costG < openList[i].costG)
-                        {
-                            openList[i].costG = costG;
-                            openList[i].costF = costF;
-                            openList[i].parentX = current.x;
-                            openList[i].parentY = current.y;
-                        }
-                        isInOpenList = true;
-                        break;
+                        Node key = openList[i-1];
+                        openList[i-1] = openList[i];
+                        openList[i] = key;
                     }
+                    else
+                        break;
                 }
-                
-                // If it's not on the open list, add it
-                if (!isInOpenList)
-                    openList.push_back(child);
             }
         }
     }
     return -1;
 }
 
-int main(int argc, const char * argv[])
-{
+int main(int argc, const char * argv[]) {
 // TEST 1
-//    unsigned char pMap[] = {1, 1, 1, 1,
-//                            0, 1, 0, 1,
-//                            0, 1, 1, 1};
-//    int pOutBuffer[12];
-//    cout << FindPath(0, 0, 1, 2, pMap, 4, 3, pOutBuffer, 2) << endl;
-
+//        unsigned char pMap[] = {1, 1, 1, 1,
+//                                0, 1, 0, 1,
+//                                0, 1, 1, 1};
+//        int pOutBuffer[12];
+//        int pOutBufferSize = 12;
+//        int height = 3;
+//        int width = 4;
+//        int startX = 0;
+//        int startY = 0;
+//        int goalX = 1;
+//        int goalY = 2;
+//
 // TEST 2
-//    unsigned char pMap[] = {0, 0, 1,
-//                            0, 1, 1,
-//                            1, 0, 1};
-//    int pOutBuffer[7];
-//    cout << FindPath(2, 0, 0, 2, pMap, 3, 3, pOutBuffer, 7) << endl;
-    
+//        unsigned char pMap[] = {0, 0, 1,
+//                                0, 1, 1,
+//                                1, 0, 1};
+//        int pOutBuffer[7];
+//        int pOutBufferSize = 7;
+//        int height = 3;
+//        int width = 3;
+//        int startX = 2;
+//        int startY = 0;
+//        int goalX = 0;
+//        int goalY = 2;
+//
 // TEST 3
-//    unsigned char pMap[] = {1, 1, 1, 1,
-//                            0, 1, 1, 1,
-//                            0, 1, 1, 1,
-//                            0, 1, 1, 1,
-//                            0, 0, 0, 1};
-//    int pOutBuffer[30];
-//    cout << FindPath(0, 0, 3, 4, pMap, 4, 5, pOutBuffer, 30) << endl;
-    
+//        unsigned char pMap[] =
+//           {1, 1, 1, 1,
+//            0, 1, 1, 1,
+//            0, 1, 1, 1,
+//            0, 1, 1, 1,
+//            0, 0, 0, 1};
+//
+//        int pOutBuffer[30];
+//        int pOutBufferSize = 30;
+//        int height = 5;
+//        int width = 4;
+//        int startX = 0;
+//        int startY = 0;
+//        int goalX = 3;
+//        int goalY = 4;
+//
 // TEST 4
-    unsigned char pMap[] = {1, 1, 1, 1, 0, 1, 1,
-                            1, 0, 1, 1, 1, 1, 1,
-                            1, 1, 0, 0, 0, 1, 1,
-                            1, 1, 1, 0, 0, 1, 1,
-                            1, 0, 0, 0, 0, 0, 1,
-                            1, 1, 0, 0, 0, 1, 1};
-    int pOutBuffer[30];
-    cout << FindPath(0, 0, 6, 5, pMap, 7, 6, pOutBuffer, 4) << endl;
-    
-    cout << endl;
-    
-    return 0;
-}
+//        unsigned char pMap[] =
+//        {1, 1, 1, 1, 0, 1, 1,
+//         1, 0, 1, 1, 1, 1, 1,
+//         1, 1, 0, 0, 0, 1, 1,
+//         1, 1, 1, 0, 0, 1, 1,
+//         1, 0, 0, 0, 0, 0, 1,
+//         1, 1, 0, 0, 0, 1, 1};
+//
+//        int pOutBuffer[30];
+//        int pOutBufferSize = 30;
+//        int height = 6;
+//        int width = 7;
+//        int startX = 0;
+//        int startY = 0;
+//        int goalX = 6;
+//        int goalY = 5;
+//
+// TEST 5
+//        unsigned char pMap[] = {
+//            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1};
+//        int pOutBuffer[100];
+//        int pOutBufferSize = 100;
+//        int height = 16;
+//        int width = 16;
+//        int startX = 0;
+//        int startY = 0;
+//        int goalX = 15;
+//        int goalY = 15;
+//
+// TEST 6
+//                    unsigned char pMap[] = {
+//                        1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+//                        1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1};
+//
+//        int pOutBuffer[100];
+//        int pOutBufferSize = 100;
+//        int height = 32;
+//        int width = 16;
+//        int startX = 0;
+//        int startY = 0;
+//        int goalX = 15;
+//        int goalY = 31;
+//
+// TEST 7
+unsigned char pMap[] = {
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
+int pOutBuffer[100];
+int pOutBufferSize = 100;
+int height = 32;
+int width = 32;
+int startX = 0;
+int startY = 0;
+int goalX = 31;
+int goalY = 31;
+
+// TEST 8
+//
+//        unsigned char pMap[] = {
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+//            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+//
+//        int pOutBuffer[100];
+//        int pOutBufferSize = 100;
+//        int height = 32;
+//        int width = 32;
+//        int startX = 0;
+//        int startY = 0;
+//        int goalX = 31;
+//        int goalY = 31;
+//
+//     TEST 9
+//    unsigned char pMap[12];
+//    int pOutBuffer[12];
+//    int pOutBufferSize = 12;
+//    int height = 1;
+//    int width = 1;
+//    int startX = 0;
+//    int startY = 0;
+//    int goalX = 0;
+//    int goalY = 0;
+
+
+
+std::chrono::time_point<std::chrono::system_clock> start, end;
+start = std::chrono::system_clock::now();
+FindPath(startX, startY, goalX, goalY, pMap, width, height, pOutBuffer, pOutBufferSize);
+end = std::chrono::system_clock::now();
+std::chrono::duration<double> elapsed_seconds = end-start;
+cout << "Time: " << elapsed_seconds.count() << "s\n";
+cout << endl;
+
+cout <<"Number of steps: " << FindPath(startX, startY, goalX, goalY, pMap, width, height, pOutBuffer, pOutBufferSize) << endl;
+cout << endl;
+
+cout << "Steps index: " << endl;
+for( size_t i = 0 ; i < FindPath(startX, startY, goalX, goalY, pMap, width, height, pOutBuffer, pOutBufferSize); i++ )
+{
+    cout << pOutBuffer[i] << endl;
+    pMap[pOutBuffer[i]] = 'X';
+}
+cout << endl;
+
+cout << "Map: " << endl;
+for (int y = 0; y < height; ++y)
+{
+    for (int x = 0; x < width; ++x)
+    {
+        if (pMap[y*width + x] == 0)
+            cout << "0 ";
+        else if (pMap[y*width + x] == 1)
+            cout << "1 ";
+        else if (pMap[y*width + x] == 'X')
+            cout << "X ";
+        else if (pMap[y*width + x] == 'Y')
+            cout << "Y ";
+    }
+    cout << endl;
+}
+cout << endl;
+return 0;
+}
